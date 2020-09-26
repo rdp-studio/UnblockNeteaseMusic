@@ -26,8 +26,8 @@ hook.target.host = new Set([
 	'music.163.com',
 	'interface.music.163.com',
 	'interface3.music.163.com',
-	'apm.music.163.com',
-	'apm3.music.163.com',
+	// 'apm.music.163.com',
+	// 'apm3.music.163.com',
 	// 'mam.netease.com',
 	// 'api.iplay.163.com', // look living
 	// 'ac.dun.163yun.com',
@@ -67,20 +67,23 @@ hook.target.path = new Set([
 	'/api/v1/discovery/recommend/songs'
 ])
 
-const domainList = [
-	'music.163.com', 
-	'music.126.net',
-	'iplay.163.com',
-	'look.163.com',
-	'y.163.com',
-]
+const appertain = hostname => {
+	if (Array.isArray(hostname)) return hostname.some(appertain)
+	if (!hostname || !['163.com', '126.net'].some(domain => hostname.includes(domain))) return false
+	return ['music.163.com', 'music.126.net', 'vod.126.net', 'iplay.163.com', 'look.163.com', 'y.163.com']
+	.some(domain => (hostname || '').endsWith(domain))
+}
+
+const portless = host => (host || '').replace(/:\d+/, '')
 
 hook.request.before = ctx => {
 	const {req} = ctx
-	req.url = (req.url.startsWith('http://') ? '' : (req.socket.encrypted ? 'https:' : 'http:') + '//' + (domainList.some(domain => (req.headers.host || '').endsWith(domain)) ? req.headers.host : null)) + req.url
+	req.url = (req.url.startsWith('http://') ? '' : (req.socket.encrypted ? 'https:' : 'http:') + '//' + (appertain(portless(req.headers.host)) ? req.headers.host : null)) + req.url
 	const url = parse(req.url)
-	if ([url.hostname, req.headers.host].some(host => host.includes('music.163.com'))) ctx.decision = 'proxy'
-	if ([url.hostname, req.headers.host].some(host => hook.target.host.has(host)) && req.method == 'POST' && (url.path == '/api/linux/forward' || url.path.startsWith('/eapi/'))) {
+	const hostname = [url.hostname, portless(req.headers.host)]
+	const hit = hostname.some(item => hook.target.host.has(item))
+	if (appertain(hostname)) ctx.decision = 'proxy'
+	if (hit && req.method == 'POST' && (url.path == '/api/linux/forward' || url.path.startsWith('/eapi/'))) {
 		return request.read(req)
 		.then(body => req.body = body)
 		.then(body => {
@@ -112,7 +115,7 @@ hook.request.before = ctx => {
 		})
 		.catch(error => console.log(error, req.url))
 	}
-	else if ((hook.target.host.has(url.hostname)) && (url.path.startsWith('/weapi/') || url.path.startsWith('/api/'))) {
+	else if (hit && (url.path.startsWith('/weapi/') || url.path.startsWith('/api/'))) {
 		req.headers['X-Real-IP'] = '118.88.88.88'
 		ctx.netease = {web: true, path: url.path.replace(/^\/weapi\//, '/api/').replace(/\?.+$/, '').replace(/\/\d*$/, '')}
 	}
@@ -122,7 +125,7 @@ hook.request.before = ctx => {
 			const url = parse(crypto.base64.decode(data[0]))
 			const id = data[1].replace(/\.\w+/, '')
 			req.url = url.href
-			req.headers['host'] = url.hostname
+			req.headers['host'] = url.host
 			req.headers['cookie'] = null
 			ctx.package = {id}
 			ctx.decision = 'proxy'
@@ -195,8 +198,11 @@ hook.request.after = ctx => {
 
 hook.connect.before = ctx => {
 	const {req} = ctx
+	const target = hook.target.host
 	const url = parse('https://' + req.url)
-	if ([url.hostname, req.headers.host].some(host => hook.target.host.has(host))) {
+	const hostname = [url.hostname, req.sni]
+	if (appertain(hostname) || url.href.includes(global.endpoint)) ctx.decision = 'proxy'
+	if (hostname.some(item => target.has(item))) {
 		if (url.port == 80) {
 			req.url = `${global.address || 'localhost'}:${global.port[0]}`
 			req.local = true
@@ -209,18 +215,7 @@ hook.connect.before = ctx => {
 			ctx.decision = 'blank'
 		}
 	}
-	else if (url.href.includes(global.endpoint)) ctx.decision = 'proxy'
-}
-
-hook.negotiate.before = ctx => {
-	const {req, socket, decision} = ctx
-	const url = parse('https://' + req.url)
-	const target = hook.target.host
-	if (req.local || decision) return
-	if (target.has(socket.sni) && !target.has(url.hostname)) {
-		target.add(url.hostname)
-		ctx.decision = 'blank'
-	}
+	if (req.sni && target.has(req.sni) && !target.has(url.hostname)) target.add(url.hostname)
 }
 
 const pretendPlay = ctx => {

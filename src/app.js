@@ -7,10 +7,11 @@ const config = require('./cli.js')
 .option(['-p', '--port'], {metavar: 'port', help: 'specify server port'})
 .option(['-a', '--address'], {metavar: 'address', help: 'specify server host'})
 .option(['-u', '--proxy-url'], {metavar: 'url', help: 'request through upstream proxy'})
-.option(['-f', '--force-host'], {metavar: 'host', help: 'force the netease server ip'})
+.option(['-f', '--force-host'], {metavar: 'host', help: 'force netease server ip'})
 .option(['-o', '--match-order'], {metavar: 'source', nargs: '+', help: 'set priority of sources'})
 .option(['-t', '--token'], {metavar: 'token', help: 'set up proxy authentication'})
 .option(['-e', '--endpoint'], {metavar: 'url', help: 'replace virtual endpoint with public host'})
+.option(['-d', '--dns'], {action: 'store_true', help: 'preresolve target host ip'})
 .option(['-s', '--strict'], {action: 'store_true', help: 'enable proxy limitation'})
 .option(['-h', '--help'], {action: 'help'})
 .parse(process.argv)
@@ -61,11 +62,9 @@ const target = Array.from(hook.target.host)
 global.port = config.port
 global.proxy = config.proxyUrl ? parse(config.proxyUrl) : null
 global.hosts = target.reduce((result, host) => Object.assign(result, {[host]: config.forceHost}), {})
-server.whitelist = ['://[\\w.]*music\\.126\\.net', '://[\\w.]*vod\\.126\\.net']
 if (config.strict) server.blacklist.push('.*')
 server.authentication = config.token || null
 global.endpoint = config.endpoint
-if (config.endpoint) server.whitelist.push(escape(config.endpoint))
 
 hosts['music.httpdns.c.163.com'] = random(['59.111.181.35', '59.111.181.38'])
 hosts['httpdns.n.netease.com'] = random(['59.111.179.213', '59.111.179.214'])
@@ -74,11 +73,10 @@ const dns = host => new Promise((resolve, reject) => require('dns').lookup(host,
 const httpdns = host => require('./request')('POST', 'https://music.httpdns.c.163.com/d', {}, host).then(response => response.json()).then(jsonBody => jsonBody.dns.reduce((result, domain) => result.concat(domain.ips), []))
 const httpdns2 = host => require('./request')('GET', 'https://httpdns.n.netease.com/httpdns/v2/d?domain=' + host).then(response => response.json()).then(jsonBody => Object.keys(jsonBody.data).map(key => jsonBody.data[key]).reduce((result, value) => result.concat(value.ip || []), []))
 
-Promise.all([httpdns, httpdns2].map(query => query(target.join(','))).concat(target.map(dns)))
+Promise.all(config.dns ? [httpdns, httpdns2].map(query => query(target.join(','))).concat(target.map(dns)) : [])
 .then(result => {
 	const {host} = hook.target
 	result.forEach(array => array.forEach(host.add, host))
-	server.whitelist = server.whitelist.concat(Array.from(host).map(escape))
 	const log = type => console.log(`${['HTTP', 'HTTPS'][type]} Server running @ http://${address || '0.0.0.0'}:${port[type]}`)
 	if (port[0]) server.http.listen(port[0], address).once('listening', () => log(0))
 	if (port[1]) server.https.listen(port[1], address).once('listening', () => log(1))
