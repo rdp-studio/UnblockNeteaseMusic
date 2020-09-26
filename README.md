@@ -16,7 +16,7 @@
 
 ```
 Set-ExecutionPolicy -ExecutionPolicy Unrestricted -Force
-Invoke-Expression -Command (Invoke-WebRequest -UseBasicParsing -Uri https://bit.ly/2HodSU3).Content
+Invoke-Expression -Command (Invoke-WebRequest -UseBasicParsing -Uri https://bit.ly/3jh8Cj2).Content
 ```
 
 或使用 Docker
